@@ -1,0 +1,124 @@
+<?php
+/**
+ * CoreShop.
+ *
+ * This source file is subject to the GNU General Public License version 3 (GPLv3)
+ * For the full copyright and license information, please view the LICENSE.md and gpl-3.0.txt
+ * files that are distributed with this source code.
+ *
+ * @copyright  Copyright (c) 2015-2020 Dominik Pfaffenbauer (https://www.pfaffenbauer.at)
+ * @license    https://www.coreshop.org/license     GNU General Public License version 3 (GPLv3)
+ */
+
+namespace CoreShop\Payum\Unzer\Action;
+
+use CoreShop\Payum\Unzer\Api;
+use CoreShop\Payum\Unzer\Request\Api\UnzerCapture;
+use CoreShop\Payum\Unzer\Request\Api\ObtainToken;
+use CoreShop\Payum\Unzer\Request\Api\PopulateUnzer;
+use Heidelpay\PhpPaymentApi\PaymentMethods\CreditCardPaymentMethod;
+use Heidelpay\PhpPaymentApi\PaymentMethods\DebitCardPaymentMethod;
+use Payum\Core\Action\ActionInterface;
+use Payum\Core\ApiAwareInterface;
+use Payum\Core\ApiAwareTrait;
+use Payum\Core\Bridge\Spl\ArrayObject;
+use Payum\Core\Exception\RequestNotSupportedException;
+use Payum\Core\GatewayAwareInterface;
+use Payum\Core\GatewayAwareTrait;
+use Payum\Core\Reply\HttpRedirect;
+use Payum\Core\Request\Capture;
+use Payum\Core\Security\GenericTokenFactoryAwareInterface;
+use Payum\Core\Security\GenericTokenFactoryAwareTrait;
+
+/**
+ * Class CaptureAction
+ * @package CoreShop\Payum\Unzer\Action
+ */
+class CaptureAction implements ActionInterface, ApiAwareInterface, GatewayAwareInterface, GenericTokenFactoryAwareInterface
+{
+    use ApiAwareTrait;
+    use GatewayAwareTrait;
+    use GenericTokenFactoryAwareTrait;
+
+    /**
+     * CaptureAction constructor.
+     */
+    public function __construct()
+    {
+        $this->apiClass = Api::class;
+    }
+
+
+    /**
+     * @param Capture $request
+     *
+     * @throws \Exception
+     */
+    public function execute($request)
+    {
+        RequestNotSupportedException::assertSupports($this, $request);
+
+        $model = ArrayObject::ensureArrayObject($request->getModel());
+
+        if ($model['paymentReferenceId']) {
+            return;
+        }
+
+        $api = $this->api->getApi();
+        $api->getRequest()->authentification(
+            $this->api->getOption('securitySender'),
+            $this->api->getOption('userLogin'),
+            $this->api->getOption('userPassword'),
+            $this->api->getOption('transactionChannel'),
+            $this->api->getOption('sandboxMode')
+        );
+
+        $notifyToken = $this->tokenFactory->createNotifyToken(
+            $request->getToken()->getGatewayName(),
+            $request->getToken()->getDetails()
+        );
+
+        $api->getRequest()->async(
+            strtoupper(substr($model['language'],0 , 2)) ?: 'EN',
+            $notifyToken->getTargetUrl() . '?afterUrl=' . $request->getToken()->getAfterUrl()
+        );
+
+        $this->gateway->execute(new PopulateUnzer($request, $api->getRequest()));
+
+        $api->getRequest()->basketData(
+            $model['basket']['number'],
+            $model['basket']['amount'],
+            $model['basket']['currency']
+        );
+
+        $this->gateway->execute(new UnzerCapture($request, $this->api));
+
+        if ($api->getResponse()->isSuccess()) {
+            if ($api instanceof CreditCardPaymentMethod
+                || $api instanceof DebitCardPaymentMethod
+            ) {
+                $obtainToken = new ObtainToken($request->getToken());
+                $obtainToken->setModel($model);
+
+                $this->gateway->execute($obtainToken);
+            }
+            else {
+                throw new HttpRedirect(
+                    $api->getResponse()->getPaymentFormUrl()
+                );
+            }
+        }
+
+        throw new \Exception($api->getResponse()->getError()['message'], $api->getResponse()->getError()['code']);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function supports($request)
+    {
+        return
+            $request instanceof Capture &&
+            $request->getModel() instanceof \ArrayAccess;
+    }
+}
