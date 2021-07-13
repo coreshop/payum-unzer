@@ -12,90 +12,33 @@
 
 namespace CoreShop\Payum\Unzer;
 
-use Heidelpay\PhpPaymentApi\PaymentMethods\CreditCardPaymentMethod;
-use Heidelpay\PhpPaymentApi\PaymentMethods\DebitCardPaymentMethod;
-use Heidelpay\PhpPaymentApi\PaymentMethods\PayPalPaymentMethod;
-use Heidelpay\PhpPaymentApi\PaymentMethods\SofortPaymentMethod;
-use Http\Message\MessageFactory;
-use Payum\Core\Bridge\Spl\ArrayObject;
-use Payum\Core\HttpClientInterface;
+use UnzerSDK\Unzer;
 
-/**
- * Class Api
- * @package CoreShop\Payum\Unzer
- */
 class Api
 {
-    /**
-     * @var mixed
-     */
-    protected $api;
+    protected Unzer $api;
+    protected string $paymentType;
+    protected string $publicKey;
 
-    /**
-     * @var HttpClientInterface
-     */
-    protected $client;
-
-    /**
-     * @var MessageFactory
-     */
-    protected $messageFactory;
-
-    const TYPES = [
-        'PayPal' => PayPalPaymentMethod::class,
-        'Sofort' => SofortPaymentMethod::class,
-        'CreditCard' => CreditCardPaymentMethod::class,
-        'DebitCard' => DebitCardPaymentMethod::class
-    ];
-
-    /**
-     * @var array|ArrayObject
-     */
-    protected $options = [];
-
-    /**
-     * @var string
-     */
-    protected $type;
-
-    public function __construct($type, array $options, HttpClientInterface $client, MessageFactory $messageFactory)
+    public function __construct(string $privateKey, string $publickKey, string $paymentType)
     {
-        $options = ArrayObject::ensureArrayObject($options);
-
-        $this->type = $type;
-        $this->options = $options;
-        $this->client = $client;
-        $this->messageFactory = $messageFactory;
+        $this->api = new Unzer($privateKey);
+        $this->paymentType = $paymentType;
+        $this->publicKey = $publickKey;
     }
 
-    /**
-     * @param $option
-     * @return mixed
-     */
-    public function getOption($option)
+    public function getPaymentType(): string
     {
-        return $this->options[$option];
+        return $this->paymentType;
     }
 
-    /**
-     * @return string
-     */
-    public function getType()
+    public function getPublicKey(): string
     {
-        return $this->type;
+        return $this->publicKey;
     }
 
-    /**
-     * @return mixed
-     */
-    public function getApi()
+    public function getApi(): Unzer
     {
-        if (null === $this->api) {
-            $class = self::TYPES[$this->type];
-
-            $this->api = new $class();
-        }
-
         return $this->api;
     }
 }

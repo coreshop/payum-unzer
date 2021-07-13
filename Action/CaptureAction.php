@@ -13,11 +13,7 @@
 namespace CoreShop\Payum\Unzer\Action;
 
 use CoreShop\Payum\Unzer\Api;
-use CoreShop\Payum\Unzer\Request\Api\UnzerCapture;
 use CoreShop\Payum\Unzer\Request\Api\ObtainToken;
-use CoreShop\Payum\Unzer\Request\Api\PopulateUnzer;
-use Heidelpay\PhpPaymentApi\PaymentMethods\CreditCardPaymentMethod;
-use Heidelpay\PhpPaymentApi\PaymentMethods\DebitCardPaymentMethod;
 use Payum\Core\Action\ActionInterface;
 use Payum\Core\ApiAwareInterface;
 use Payum\Core\ApiAwareTrait;
@@ -27,32 +23,21 @@ use Payum\Core\GatewayAwareInterface;
 use Payum\Core\GatewayAwareTrait;
 use Payum\Core\Reply\HttpRedirect;
 use Payum\Core\Request\Capture;
-use Payum\Core\Security\GenericTokenFactoryAwareInterface;
-use Payum\Core\Security\GenericTokenFactoryAwareTrait;
+use Payum\Core\Request\GetHttpRequest;
+use UnzerSDK\Unzer;
 
-/**
- * Class CaptureAction
- * @package CoreShop\Payum\Unzer\Action
- */
-class CaptureAction implements ActionInterface, ApiAwareInterface, GatewayAwareInterface, GenericTokenFactoryAwareInterface
+class CaptureAction implements ActionInterface, ApiAwareInterface, GatewayAwareInterface
 {
-    use ApiAwareTrait;
     use GatewayAwareTrait;
-    use GenericTokenFactoryAwareTrait;
+    use ApiAwareTrait;
 
-    /**
-     * CaptureAction constructor.
-     */
     public function __construct()
     {
         $this->apiClass = Api::class;
     }
 
-
     /**
      * @param Capture $request
-     *
-     * @throws \Exception
      */
     public function execute($request)
     {
@@ -60,56 +45,76 @@ class CaptureAction implements ActionInterface, ApiAwareInterface, GatewayAwareI
 
         $model = ArrayObject::ensureArrayObject($request->getModel());
 
-        if ($model['paymentReferenceId']) {
+        /**
+         * @var Unzer $unzerApi
+         */
+        $unzerApi = $this->api->getApi();
+
+        if ($model['UNZER_PAYMENT_ID']) {
+            $payment = $unzerApi->fetchPayment($model['UNZER_PAYMENT_ID']);
+            $transaction = $payment->getInitialTransaction();
+
+            if ($payment->isCompleted()) {
+                $model['UNZER_PAYMENT_SUCCESS'] = 1;
+            } elseif ($payment->isPending()) {
+                if ($transaction && $transaction->isSuccess()) {
+                    $model['UNZER_PAYMENT_SUCCESS'] = 1;
+                }
+                elseif ($transaction && $transaction->isPending()) {
+                    $model['UNZER_PAYMENT_PENDING'] = 1;
+                }
+            }
+            elseif ($transaction) {
+                $model['UNZER_PAYMENT_ERROR'] = $transaction->getMessage()->getCustomer();
+                $model['UNZER_PAYMENT_MERCHANT_ERROR'] = $transaction->getMessage()->getMerchant();
+            }
+
             return;
         }
 
-        $api = $this->api->getApi();
-        $api->getRequest()->authentification(
-            $this->api->getOption('securitySender'),
-            $this->api->getOption('userLogin'),
-            $this->api->getOption('userPassword'),
-            $this->api->getOption('transactionChannel'),
-            $this->api->getOption('sandboxMode')
-        );
+        $this->gateway->execute($httpRequest = new GetHttpRequest());
 
-        $notifyToken = $this->tokenFactory->createNotifyToken(
-            $request->getToken()->getGatewayName(),
-            $request->getToken()->getDetails()
-        );
+        $postParams = [];
+        parse_str($httpRequest->content, $postParams);
 
-        $api->getRequest()->async(
-            strtoupper(substr($model['language'],0 , 2)) ?: 'EN',
-            $notifyToken->getTargetUrl() . '?afterUrl=' . $request->getToken()->getAfterUrl()
-        );
+        if (isset($postParams['UNZER_RESOURCE_ID'])) {
+            $model['UNZER_RESOURCE_ID'] = $postParams['UNZER_RESOURCE_ID'];
 
-        $this->gateway->execute(new PopulateUnzer($request, $api->getRequest()));
+            $transaction = $unzerApi->charge(
+                $model['amount'] / 100,
+                $model['currency'],
+                $model['UNZER_RESOURCE_ID'],
+                $request->getToken()->getTargetUrl(),
+                $model['UNZER_CUSTOMER'] ?? null,
+                $model['number'],
+                $model['UNZER_METADATA'] ?? null,
+                $model['UNZER_BASKET'] ?? null,
+                null,
+                null,
+                $model['description']
+            );
 
-        $api->getRequest()->basketData(
-            $model['basket']['number'],
-            $model['basket']['amount'],
-            $model['basket']['currency']
-        );
+            if ($transaction->isError()) {
+                $model['UNZER_PAYMENT_ERROR'] = $transaction->getMessage()->getCustomer();
+                $model['UNZER_PAYMENT_MERCHANT_ERROR'] = $transaction->getMessage()->getMerchant();
 
-        $this->gateway->execute(new UnzerCapture($request, $this->api));
-
-        if ($api->getResponse()->isSuccess()) {
-            if ($api instanceof CreditCardPaymentMethod
-                || $api instanceof DebitCardPaymentMethod
-            ) {
-                $obtainToken = new ObtainToken($request->getToken());
-                $obtainToken->setModel($model);
-
-                $this->gateway->execute($obtainToken);
+                throw new \Exception($transaction->getMessage()->getCustomer());
             }
-            else {
-                throw new HttpRedirect(
-                    $api->getResponse()->getPaymentFormUrl()
-                );
+
+            $model['UNZER_PAYMENT_ID'] = $transaction->getPaymentId();
+            $model['UNZER_SHORT_PAYMENT_ID'] = $transaction->getShortId();
+
+            if ($transaction->getRedirectUrl()) {
+                throw new HttpRedirect($transaction->getRedirectUrl());
             }
+
+            return;
         }
 
-        throw new \Exception($api->getResponse()->getError()['message'], $api->getResponse()->getError()['code']);
+        $obtainToken = new ObtainToken($request->getToken());
+        $obtainToken->setModel($model);
+
+        $this->gateway->execute($obtainToken);
     }
 
     /**

@@ -18,10 +18,6 @@ use Payum\Core\Exception\RequestNotSupportedException;
 use Payum\Core\Model\PaymentInterface;
 use Payum\Core\Request\Convert;
 
-/**
- * Class ConvertPaymentAction
- * @package CoreShop\Payum\Unzer\Action
- */
 class ConvertPaymentAction implements ActionInterface
 {
     /**
@@ -37,11 +33,11 @@ class ConvertPaymentAction implements ActionInterface
         $payment = $request->getSource();
 
         $details = ArrayObject::ensureArrayObject($payment->getDetails());
-        $details['basket'] = [
-            'number' => $payment->getNumber(),
-            'currency' => $payment->getCurrencyCode(),
-            'amount' => $payment->getTotalAmount()
-        ];
+
+        $details['amount'] = $payment->getTotalAmount();
+        $details['currency'] = $payment->getCurrencyCode();
+        $details['number'] = $payment->getNumber();
+        $details['description'] = $payment->getDescription();
 
         $request->setResult((array)$details);
     }

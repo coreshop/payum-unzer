@@ -17,10 +17,6 @@ use Payum\Core\Bridge\Spl\ArrayObject;
 use Payum\Core\Request\GetStatusInterface;
 use Payum\Core\Exception\RequestNotSupportedException;
 
-/**
- * Class StatusAction
- * @package CoreShop\Payum\Unzer\Action
- */
 class StatusAction implements ActionInterface
 {
     /**
@@ -34,15 +30,18 @@ class StatusAction implements ActionInterface
 
         $model = new ArrayObject($request->getModel());
 
-        if (null === $model['paymentReferenceId']) {
+        if (null === $model['UNZER_RESOURCE_ID']) {
             $request->markNew();
             return;
         }
 
-        if ($model['isSuccess']) {
+        if ($model['UNZER_PAYMENT_ERROR']) {
+            $request->markFailed();
+        }
+        else if ($model['UNZER_PAYMENT_SUCCESS']) {
             $request->markCaptured();
         }
-        else if ($model['isPending']) {
+        else if ($model['UNZER_PAYMENT_PENDING']) {
             $request->markPending();
         }
         else {

@@ -1,0 +1,57 @@
+{% extends layout ?: "@CoreShopPayumBundle::layout.html.twig" %}
+
+{% block head_stylesheets %}
+    {{ parent() }}
+
+    <link rel="stylesheet" href="https://static.unzer.com/v1/unzer.css" />
+    <script type="text/javascript" src="https://static.unzer.com/v1/unzer.js"></script>
+{% endblock %}
+
+{% block content %}
+    {{ parent() }}
+
+    <form id="payment-form" class="unzerUI form" novalidate>
+        <div id="paypal-payment-container"></div>
+        <div class="field" id="error-holder" style="color: #9f3a38"> </div>
+        <button class="unzerUI primary button fluid" id="submit-button" type="submit">Pay</button>
+    </form>
+{% endblock %}
+
+{% block scripts %}
+    {{ parent() }}
+
+    <script>
+        // Create an Unzer instance with your public key
+        let unzerInstance = new unzer('{{ unzerPublicKey }}');
+
+        // Create an Paypal instance
+        let Paypal = unzerInstance.Paypal();
+        Paypal.create('email', {
+            containerId: 'paypal-payment-container'
+        })
+
+        // Handle payment form submission
+        let form = document.getElementById('payment-form');
+        form.addEventListener('submit', function(event) {
+            event.preventDefault();
+            // Creating a Paypal resource
+            Paypal.createResource()
+                .then(function(result) {
+                    let hiddenInput = document.createElement('input');
+                    hiddenInput.setAttribute('type', 'hidden');
+                    hiddenInput.setAttribute('name', 'UNZER_RESOURCE_ID');
+                    hiddenInput.setAttribute('value', result.id);
+                    form.appendChild(hiddenInput);
+                    form.setAttribute('method', 'POST');
+                    form.setAttribute('action', '{{ targetUrl }}');
+
+                    // Submitting the form
+                    form.submit();
+                })
+                .catch(function(error) {
+                    $('#error-holder').html(error.message)
+                })
+        });
+    </script>
+
+{% endblock %}
