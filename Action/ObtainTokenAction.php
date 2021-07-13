@@ -10,7 +10,7 @@
  * @license    https://www.coreshop.org/license     GNU General Public License version 3 (GPLv3)
  */
 
-namespace CoreShop\Payum\Unzer\Action\Api;
+namespace CoreShop\Payum\Unzer\Action;
 
 use CoreShop\Payum\Unzer\Api;
 use CoreShop\Payum\Unzer\Request\Api\ObtainToken;
@@ -24,32 +24,19 @@ use Payum\Core\GatewayAwareTrait;
 use Payum\Core\Reply\HttpResponse;
 use Payum\Core\Request\RenderTemplate;
 
-/**
- * Class ObtainTokenAction
- * @package CoreShop\Payum\Unzer\Action\Api
- */
 class ObtainTokenAction implements ActionInterface, GatewayAwareInterface, ApiAwareInterface
 {
     use ApiAwareTrait;
     use GatewayAwareTrait;
 
-    /**
-     * @var string
-     */
-    protected $templateName;
+    protected string $templatePath;
 
-    /**
-     * @param string $templateName
-     */
-    public function __construct($templateName)
+    public function __construct(string $templatePath)
     {
         $this->apiClass = Api::class;
-        $this->templateName = $templateName;
+        $this->templatePath = $templatePath;
     }
 
-    /**
-     * {@inheritDoc}
-     */
     public function execute($request)
     {
         /** @var $request ObtainToken */
@@ -57,18 +44,16 @@ class ObtainTokenAction implements ActionInterface, GatewayAwareInterface, ApiAw
 
         $model = ArrayObject::ensureArrayObject($request->getModel());
 
-        $api = $this->api->getApi();
+        $template = sprintf('%s/%s/token.html.twig', $this->templatePath, $this->api->getPaymentType());
 
-        if ($api->getResponse()->isSuccess()) {
-            $this->gateway->execute($renderTemplate = new RenderTemplate($this->templateName, array(
-                'model' => $model,
-                'frame_src' => $api->getResponse()->getPaymentFormUrl(),
-            )));
+        $this->gateway->execute($renderTemplate = new RenderTemplate($template, array(
+            'model' => $model,
+            'targetUrl' => $request->getToken()->getTargetUrl(),
+            'paymentType' => $this->api->getPaymentType(),
+            'unzerPublicKey' => $this->api->getPublicKey()
+        )));
 
-            throw new HttpResponse($renderTemplate->getResult());
-        }
-
-        throw new \Exception($api->getResponse()->getError()['message'], $api->getResponse()->getError()['code']);
+        throw new HttpResponse($renderTemplate->getResult());
     }
 
     /**

@@ -14,10 +14,6 @@ namespace CoreShop\Payum\Unzer\Request\Api;
 
 use Payum\Core\Request\Generic;
 
-/**
- * Class ObtainToken
- * @package CoreShop\Payum\Unzer\Request\Api
- */
 class ObtainToken extends Generic
 {
 }
